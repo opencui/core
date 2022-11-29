@@ -44,7 +44,6 @@ data class Condition(private val f: () -> Boolean): () -> Boolean, Serializable 
 
 data class Prompts(val prompts: List<String>) : Serializable {
     constructor(vararg prompts: String) : this(prompts.toList())
-
     fun isNotEmpty() = prompts.isNotEmpty()
     fun random() = prompts.random()
 }
@@ -58,10 +57,10 @@ data class Templates(val channelPrompts: Map<String, Prompts>): Serializable {
     }
 }
 
-fun templateOf(vararg pairs: Pair<String, Prompts>) = Templates(if (pairs.size > 0) pairs.toMap() else emptyMap())
+fun templateOf(vararg pairs: Pair<String, Prompts>) = Templates(if (pairs.isNotEmpty()) pairs.toMap() else emptyMap())
 fun templateOf(vararg prompts: String) = Templates(mapOf(SideEffect.RESTFUL to Prompts(*prompts)))
 
-fun defaultTemplate() = Templates(mapOf())
+fun emptyTemplate() = Templates(mapOf())
 
 fun <T> convertDialogActGen(source: () -> T, dialogActGen: (T) -> DialogAct): () -> DialogAct {
     return {dialogActGen(source())}
@@ -157,7 +156,6 @@ data class SlotInitAnnotation(val action: Action): Annotation
 data class SlotDoneAnnotation(val condition: () -> Boolean, val actions: List<Action>): Annotation
 
 data class DialogActCustomizationAnnotation(val dialogActName: String, val templateGen: (DialogAct) -> Templates): Annotation
-
 
 enum class SystemAnnotationType(val typeName: String) {
     IDonotGetIt("io.opencui.core.IDonotGetIt"),
