@@ -67,7 +67,6 @@ interface IFrame : Serializable {
 
     fun createBuilder(): FillBuilder
 
-
     // slot "this" is a special slot which indicates searching for frame confirmation
     fun searchConfirmation(path: String): IFrame? {
         return null

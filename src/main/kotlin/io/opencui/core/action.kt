@@ -301,13 +301,13 @@ data class RefocusAction(
     }
 }
 
+
 data class RecoverAction(val tag: String = "") : StateAction {
     override fun run(session: UserSession): ActionResult {
         session.schedule.state = Scheduler.State.RESCHEDULE
         return ActionResult(emptyLog())
     }
 }
-
 
 
 data class SlotAskAction(val tag: String = "") : StateAction {
@@ -327,8 +327,6 @@ data class SlotAskAction(val tag: String = "") : StateAction {
         parent1.inside = true
         session.schedule.side = Scheduler.Side.INSIDE
     }
-
-
 
     override fun run(session: UserSession): ActionResult {
         val filler = session.schedule.last()
@@ -540,6 +538,7 @@ class RescheduleAction : StateAction {
     }
 }
 
+
 // TODO(xiaobo): can we remove this now?
 abstract class ExternalAction(
     open val frame: IFrame,
@@ -575,6 +574,7 @@ abstract class ExternalAction(
     abstract val actionName: String
 }
 
+
 data class IntentAction(
     val jsonIntent: FullFrameBuilder
 ) : ChartAction, KernelMode {
@@ -594,8 +594,6 @@ data class IntentAction(
         return ActionResult(createLog("INTENT ACTION : ${intent.javaClass.name}"), true)
     }
 }
-
-
 
 
 // TODO(xiaoyun): separate execution path for composite action later.
@@ -670,5 +668,307 @@ class Handoff: SchemaAction {
     companion object {
         val logger = LoggerFactory.getLogger(Handoff::class.java)
         const val DEFAULT = "Default"
+    }
+}
+
+
+data class CleanupAction(
+    val toBeCleaned: List<IFiller>
+) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        for (fillerToBeCleaned in toBeCleaned) {
+            fillerToBeCleaned.clear()
+            for (currentScheduler in session.schedulers.reversed()) {
+                var index = currentScheduler.size
+                for ((i, f) in currentScheduler.withIndex()) {
+                    if (f == fillerToBeCleaned) {
+                        index = i
+                        break
+                    }
+                }
+                // pop fillers that have gone back to initial state but never pop the root filler in a CleanupAction
+                if (index < currentScheduler.size) {
+                    var count = currentScheduler.size - index
+                    while (count-- > 0 && currentScheduler.size > 1) {
+                        currentScheduler.pop()
+                    }
+                    break
+                }
+            }
+        }
+
+        return ActionResult(
+            createLog("CLEANUP SLOT : ${toBeCleaned.map { it.path!!.path.last() }.joinToString { "target=${it.host.javaClass.name}&slot=${if (it.isRoot()) "" else it.attribute}" }}"),
+            true
+        )
+    }
+}
+
+data class CleanupActionBySlot(val toBeCleaned: List<Pair<IFrame, String?>>) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val fillersToBeCleaned = mutableListOf<IFiller>()
+        for (slotToBeCleaned in toBeCleaned) {
+            val targetFiller = session.findWrapperFillerForTargetSlot(slotToBeCleaned.first, slotToBeCleaned.second) ?: continue
+            fillersToBeCleaned += targetFiller
+        }
+
+        return CleanupAction(fillersToBeCleaned).wrappedRun(session)
+    }
+}
+
+data class RecheckAction(val toBeRechecked: List<IFiller>) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        for (fillerToBeRechecked in toBeRechecked) {
+            (fillerToBeRechecked as? AnnotatedWrapperFiller)?.recheck()
+        }
+
+        return ActionResult(
+            createLog("RECHECK SLOT : ${toBeRechecked.map { it.path!!.path.last() }.joinToString { "target=${it.host.javaClass.name}&slot=${if (it.isRoot()) "" else it.attribute}" }}"),
+            true
+        )
+    }
+}
+
+data class RecheckActionBySlot(val toBeRechecked: List<Pair<IFrame, String?>>) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val fillersToBeRechecked = mutableListOf<AnnotatedWrapperFiller>()
+        for (slotToBeCleaned in toBeRechecked) {
+            val targetFiller = session.findWrapperFillerForTargetSlot(slotToBeCleaned.first, slotToBeCleaned.second) ?: continue
+            fillersToBeRechecked += targetFiller
+        }
+
+        return RecheckAction(fillersToBeRechecked).wrappedRun(session)
+    }
+}
+
+
+data class ReinitAction(val toBeReinit: List<IFiller>) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        for (filler in toBeReinit) {
+            (filler as? AnnotatedWrapperFiller)?.reinit()
+        }
+
+        return ActionResult(
+            createLog("REINIT SLOT : ${toBeReinit.map { it.path!!.path.last() }.joinToString { "target=${it.host.javaClass.name}&slot=${if (it.isRoot()) "" else it.attribute}" }}"),
+            true
+        )
+    }
+}
+
+
+data class ReinitActionBySlot(val toBeRechecked: List<Pair<IFrame, String?>>) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val fillersToBeReinit = mutableListOf<AnnotatedWrapperFiller>()
+        for (slot in toBeRechecked) {
+            val targetFiller = session.findWrapperFillerForTargetSlot(slot.first, slot.second) ?: continue
+            fillersToBeReinit += targetFiller
+        }
+
+        return ReinitAction(fillersToBeReinit).wrappedRun(session)
+    }
+}
+
+
+data class DirectlyFillAction<T>(
+    val generator: () -> T?,
+    val filler: AnnotatedWrapperFiller, val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val param = filler.path!!.path.last()
+        val value = generator() ?: return ActionResult(
+            createLog("FILL SLOT value is null for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+            true
+        )
+        filler.directlyFill(value)
+        filler.decorativeAnnotations.addAll(decorativeAnnotations)
+        return ActionResult(
+            createLog("FILL SLOT for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+            true
+        )
+    }
+}
+
+
+data class DirectlyFillActionBySlot<T>(
+    val generator: () -> T?,
+    val frame: IFrame?,
+    val slot: String?,
+    val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val wrapFiller = frame?.let { session.findWrapperFillerForTargetSlot(frame, slot) } ?: return ActionResult(
+            createLog("cannot find filler for frame : ${if (frame != null) frame::class.qualifiedName else null}, slot : ${slot}"),
+            true
+        )
+        return DirectlyFillAction(generator, wrapFiller, decorativeAnnotations).wrappedRun(session)
+    }
+}
+
+
+data class FillAction<T>(
+    val generator: () -> T?,
+    val filler: IFiller,
+    val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val param = filler.path!!.path.last()
+        val value = generator() ?: return ActionResult(
+            createLog("FILL SLOT value is null for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+            true
+        )
+        val frameEventList = session.generateFrameEvent(filler, value)
+        frameEventList.forEach {
+            it.triggered = true
+            it.slots.forEach { slot ->
+                slot.decorativeAnnotations.addAll(decorativeAnnotations)
+            }
+        }
+
+        if (frameEventList.isNotEmpty()) session.addEvents(frameEventList)
+        return ActionResult(
+            createLog("FILL SLOT for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+            true
+        )
+    }
+}
+
+
+data class FillActionBySlot<T>(
+    val generator: () -> T?,
+    val frame: IFrame?,
+    val slot: String?,
+    val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val wrapFiller = frame?.let { session.findWrapperFillerForTargetSlot(frame, slot) } ?: return ActionResult(
+            createLog("cannot find filler for frame : ${if (frame != null) frame::class.qualifiedName else null}, slot : ${slot}"),
+            true
+        )
+        if (wrapFiller.targetFiller.isMV()) {
+            return DirectlyFillAction(generator, wrapFiller, decorativeAnnotations).wrappedRun(session)
+        }
+        return FillAction(generator, wrapFiller.targetFiller, decorativeAnnotations).wrappedRun(session)
+    }
+}
+
+
+data class MarkFillerDone(val filler: AnnotatedWrapperFiller): StateAction {
+    override fun run(session: UserSession): ActionResult {
+        filler.markDone()
+        return ActionResult(createLog("end filler for: ${filler.targetFiller.attribute}"))
+    }
+}
+
+
+data class MarkFillerFilled(val filler: AnnotatedWrapperFiller): StateAction {
+    override fun run(session: UserSession): ActionResult {
+        filler.markFilled()
+        return ActionResult(createLog("end filler for: ${filler.targetFiller.attribute}"))
+    }
+}
+
+
+data class EndSlot(
+    val frame: IFrame?, val slot: String?, val hard: Boolean) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val wrapFiller = frame?.let { session.findWrapperFillerForTargetSlot(frame, slot) } ?: return ActionResult(
+            createLog("cannot find filler for frame : ${if (frame != null) frame::class.qualifiedName else null}; slot: ${slot}"),
+            true
+        )
+        return if (hard) MarkFillerDone(wrapFiller).wrappedRun(session) else MarkFillerFilled(wrapFiller).wrappedRun(session)
+    }
+}
+
+
+class EndTopIntent : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val topFrameFiller = (session.schedule.firstOrNull() as? AnnotatedWrapperFiller)?.targetFiller as? FrameFiller<*>
+        // find skills slot of main if there is one, we need a protocol to decide which intent to end
+        if (topFrameFiller != null) {
+            val currentSkill = (topFrameFiller.fillers["skills"]?.targetFiller as? MultiValueFiller<*>)?.findCurrentFiller()
+            val currentIntent = ((currentSkill?.targetFiller as? InterfaceFiller<*>)?.vfiller?.targetFiller as? FrameFiller<*>)?.frame()
+            if (currentSkill != null && currentIntent is IIntent) {
+                return MarkFillerDone(currentSkill).wrappedRun(session)
+            }
+        }
+        if (topFrameFiller != null && topFrameFiller.frame() is IIntent) {
+            return MarkFillerDone((session.schedule.first() as AnnotatedWrapperFiller)).wrappedRun(session)
+        }
+
+        return ActionResult(null)
+    }
+}
+
+data class AbortIntentAction(val frame: AbstractAbortIntent) : ChartAction {
+    override fun run(session: UserSession): ActionResult {
+        val specifiedQualifiedIntentName = frame.intentType?.value
+        var targetFiller: AnnotatedWrapperFiller? = null
+        val fillersNeedToPop = mutableSetOf<IFiller>()
+        val prompts: MutableList<DialogAct> = mutableListOf()
+        val mainScheduler = session.mainSchedule
+        for (f in mainScheduler.reversed()) {
+            fillersNeedToPop.add(f)
+            if (f is AnnotatedWrapperFiller && f.targetFiller is FrameFiller<*> && f.targetFiller.frame() is IIntent && (specifiedQualifiedIntentName == null || specifiedQualifiedIntentName == f.targetFiller.qualifiedTypeStr())) {
+                targetFiller = f
+                break
+            }
+        }
+        if (targetFiller != null) {
+            // target intent found
+            var abortedFiller: AnnotatedWrapperFiller? = null
+            while (mainScheduler.isNotEmpty()) {
+                val top = mainScheduler.peek()
+                // we only abort child of Multi Value Filler or the root intent; aborting other intents is meaningless
+                if (top !in fillersNeedToPop && top is MultiValueFiller<*> && top.abortCurrentChild()) {
+                    break
+                } else {
+                    mainScheduler.pop()
+                    if (top is AnnotatedWrapperFiller && top.targetFiller is FrameFiller<*> && top.targetFiller.frame() is IIntent) {
+                        abortedFiller = top
+                    }
+                }
+            }
+
+            while (session.schedulers.size > 1) {
+                session.schedulers.removeLast()
+            }
+
+            val targetIntent = (targetFiller.targetFiller as FrameFiller<*>).frame() as IIntent
+            val targetIntentName = with(session) { targetIntent::class.qualifiedName!! }
+            val abortIntent = (abortedFiller!!.targetFiller as FrameFiller<*>).frame() as IIntent
+            val abortIntentName = with(session) { abortIntent::class.qualifiedName!! }
+            frame.intent = abortIntent
+            if (frame.customizedSuccessPrompt.containsKey(abortIntentName)) {
+                prompts.add(frame.customizedSuccessPrompt[abortIntentName]!!())
+            } else {
+                if (frame.intentType == null || frame.intentType!!.value == abortIntentName) {
+                    frame.defaultSuccessPrompt?.let {
+                        prompts.add(it())
+                    }
+                } else {
+                    if (frame.defaultFallbackPrompt != null) {
+                        prompts.add(frame.defaultFallbackPrompt!!())
+                    } else if (frame.defaultSuccessPrompt != null) {
+                        prompts.add(frame.defaultSuccessPrompt!!())
+                    }
+                }
+            }
+        } else {
+            frame.defaultFailPrompt?.let {
+                prompts.add(it())
+            }
+        }
+        return ActionResult(
+            prompts,
+            createLog(prompts.map { it.templates.pick() }.joinToString { it }), true)
+    }
+}
+
+
+data class MaxDiscardAction(
+    val targetSlot: MutableList<*>, val maxEntry: Int
+) : SchemaAction {
+    override fun run(session: UserSession): ActionResult {
+        val size = targetSlot.size
+        if (size > maxEntry) {
+            targetSlot.removeAll(targetSlot.subList(maxEntry, targetSlot.size))
+        }
+        return ActionResult(createLog("DISCARD mv entries that exceed max number, from $size entries to $maxEntry entries"), true)
     }
 }
