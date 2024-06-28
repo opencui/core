@@ -802,6 +802,41 @@ data class DirectlyFillActionBySlot<T>(
     }
 }
 
+// The introduction of companion-not requires use to automatically update the other related slot.
+// equal, or, less than/greater than, etc.
+
+data class DirectlyUpdateAction<T>(
+    val generator: () -> T?,
+    val filler: AnnotatedWrapperFiller, val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val param = filler.path!!.path.last()
+        val value = generator() ?: return ActionResult(
+            createLog("FILL SLOT value is null for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+            true
+        )
+        filler.directlyFill(value)
+        filler.decorativeAnnotations.addAll(decorativeAnnotations)
+        return ActionResult(
+            createLog("FILL SLOT for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+            true
+        )
+    }
+}
+
+
+data class DirectlyUpdateActionBySlot<T>(
+    val generator: () -> T?,
+    val frame: IFrame?,
+    val slot: String?,
+    val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
+    override fun run(session: UserSession): ActionResult {
+        val wrapFiller = frame?.let { session.findWrapperFillerForTargetSlot(frame, slot) } ?: return ActionResult(
+            createLog("cannot find filler for frame : ${if (frame != null) frame::class.qualifiedName else null}, slot : ${slot}"),
+            true
+        )
+        return DirectlyFillAction(generator, wrapFiller, decorativeAnnotations).wrappedRun(session)
+    }
+}
 
 data class FillAction<T>(
     val generator: () -> T?,

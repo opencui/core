@@ -10,8 +10,9 @@ import io.opencui.serialization.JsonObject
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import java.io.Serializable
 import kotlin.collections.LinkedHashMap
-import kotlin.reflect.KMutableProperty0
+import kotlin.reflect.*
 import kotlin.reflect.full.isSubclassOf
+import kotlin.reflect.full.memberProperties
 
 /**
  * Each filler is a statechart itself, but also a part of larger statechart.
@@ -273,10 +274,22 @@ interface TypedFiller<T> {
     }
 }
 
+data class PropertyFinder<T>(val r: Any, val name: String) {
+    fun invoke(companionType: CompanionType): KMutableProperty1<Any, T>? {
+        val realName = companionType.addSuffix(name)
+        val property = r::class.memberProperties.find { it.name == realName }
+        @Suppress("UNCHECKED_CAST")
+        return (property as? KMutableProperty1<Any, T>)
+    }
+}
+
 class EntityFiller<T>(
     val buildSink: () -> KMutableProperty0<T?>,
     val origSetter: ((String?) -> Unit)? = null,
-    val builder: (String, String?) -> T?) : AEntityFiller(), TypedFiller<T> {
+    val builder: (String, String?) -> T?
+) : AEntityFiller(), TypedFiller<T> {
+
+
     constructor(buildSink: () -> KMutableProperty0<T?>,
                 origSetter: ((String?) -> Unit)? = null,
                 builder: (String) -> T?): this(buildSink, origSetter, {s, _ -> builder(s)})

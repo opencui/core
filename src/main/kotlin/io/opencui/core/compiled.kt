@@ -622,7 +622,19 @@ data class BadIndex(override var session: UserSession? = null, var index: Int) :
 
 // This
 enum class CompanionType {
-    AND, NEGATE, OR, LESSTHAN, LESSTHANEQUALTO, GREATERTHAN, GREATERTHANQUALTO
+    AND, NEGATE, OR, LESSTHAN, LESSTHANEQUALTO, GREATERTHAN, GREATERTHANQUALTO;
+
+    fun addSuffix(name: String) : String {
+        return when (this) {
+            AND -> name
+            NEGATE -> "${name}_Not"
+            OR -> "${name}_Or"
+            LESSTHAN -> "${name}_LessThan"
+            GREATERTHAN -> "${name}_GreaterThan"
+            LESSTHANEQUALTO -> "${name}_LessThanEqualTo"
+            GREATERTHANQUALTO-> "${name}_GreaterThanEqualTo"
+        }
+    }
 }
 
 // This turns a closure with receiver
@@ -637,6 +649,7 @@ data class Negate<T>(val filters: List<(T)->Boolean>) : (T) -> Boolean {
         return true
     }
 }
+
 
 data class Or<T>(val filters: List<(T)->Boolean>) : (T) -> Boolean {
     constructor(vararg fs: T): this ( fs.map { f -> { it : T -> it == f} } )
