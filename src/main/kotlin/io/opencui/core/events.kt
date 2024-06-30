@@ -44,8 +44,8 @@ data class EntityEvent(
         this.type = type
     }
 
-    fun toCompanion(companionType: CompanionType) {
-        semantic = companionType
+    fun toCompanion(companionType: CompanionType) : EntityEvent {
+        return EntityEvent(value, "_${attribute}", type).apply { semantic = companionType }
     }
 
     // TODO(sean) what is this used for?
@@ -72,7 +72,7 @@ enum class EventSource {
 }
 
 /**
- * This is used for specify proposed template match, each is containing one trigger, and
+ * This is used for specify proposed template match, each is contains one trigger, and
  * multiple slot filling.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -84,9 +84,10 @@ data class FrameEvent(
     var attribute: String? = null
     var query: String? = null
 
-    fun toCompanion(companionType: CompanionType)  {
-        slots.map { it.toCompanion(companionType) }
+    fun toCompanion(companionType: CompanionType) : FrameEvent {
+        return FrameEvent(type, slots.map { it.toCompanion(companionType) }, frames, packageName)
     }
+
 
     val qualifiedName = "$packageName.$type"
 

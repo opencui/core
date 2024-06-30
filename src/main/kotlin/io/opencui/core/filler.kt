@@ -331,6 +331,7 @@ class EntityFiller<T>(
     }
 
     override fun commit(frameEvent: FrameEvent): Boolean {
+        // The original slot only take the AND/EQUALTO
         val related = frameEvent.slots.find { it.attribute == attribute && !it.isUsed }!!
         related.isUsed = true
 
@@ -407,13 +408,13 @@ class HelperFiller<T>(
     }
 
     override fun commit(frameEvent: FrameEvent): Boolean {
-        val related = frameEvent.slots.find { it.attribute == attribute && !it.isUsed }!!
+        val related = frameEvent.slots.find { it.attribute == "_$attribute" && !it.isUsed }!!
         related.isUsed = true
 
         if (valueGood != null && !valueGood!!.invoke(related.value, related.type)) return false
 
         val typedValue = builder.invoke(related.value, related.type) ?: return true
-        
+
         if (related.semantic == CompanionType.AND) {
             // We mainly need to remove the value from
             target.not.removeIf{ it == typedValue }
@@ -440,8 +441,6 @@ class HelperFiller<T>(
         }
     }
 }
-
-
 
 // Used with composite with VR (or almost always).
 class OpaqueFiller<T>(
