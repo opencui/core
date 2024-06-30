@@ -802,41 +802,43 @@ data class DirectlyFillActionBySlot<T>(
     }
 }
 
-// The introduction of companion-not requires use to automatically update the other related slot.
-// equal, or, less than/greater than, etc.
 
-data class DirectlyUpdateAction<T>(
+// This is used to conditional clear the single value slot based on whether the new value agrees with current value.
+data class ConditionalReinitActionBySlot<T>(
     val generator: () -> T?,
-    val filler: AnnotatedWrapperFiller, val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
+    val slot: Pair<IFrame, String?>) : StateAction {
     override fun run(session: UserSession): ActionResult {
-        val param = filler.path!!.path.last()
-        val value = generator() ?: return ActionResult(
-            createLog("FILL SLOT value is null for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+
+        val newValue = generator() ?: return ActionResult(
+            createLog("FILL SLOT value is null for target : ${slot.first::class.qualifiedName}, slot : ${slot.second}"),
             true
         )
-        filler.directlyFill(value)
-        filler.decorativeAnnotations.addAll(decorativeAnnotations)
-        return ActionResult(
-            createLog("FILL SLOT for target : ${param.host::class.qualifiedName}, slot : ${if (param.isRoot()) "" else param.attribute}"),
+
+        val targetFiller = session.findWrapperFillerForTargetSlot(slot.first, slot.second) ?: return ActionResult(
+            createLog("Cann't find filler for target : ${slot.first::class.qualifiedName}, slot : ${slot.second}"),
             true
         )
+
+
+        if (targetFiller.targetFiller !is TypedFiller<*>) {
+            return ActionResult(
+                createLog("The filler is not typed filler : ${slot.first::class.qualifiedName}, slot : ${slot.second}"),
+            true)
+        }
+
+        val entityFiller = targetFiller.targetFiller as TypedFiller<T>
+        val currentValue = entityFiller.target.get()
+
+        if (currentValue != newValue) {
+            return ActionResult(
+                createLog("No need to clear : ${slot.first::class.qualifiedName}, slot : ${slot.second} $currentValue : $newValue"),
+                true)
+        }
+
+        return ReinitAction(listOf(targetFiller)).wrappedRun(session)
     }
 }
 
-
-data class DirectlyUpdateActionBySlot<T>(
-    val generator: () -> T?,
-    val frame: IFrame?,
-    val slot: String?,
-    val decorativeAnnotations: List<Annotation> = listOf()) : StateAction {
-    override fun run(session: UserSession): ActionResult {
-        val wrapFiller = frame?.let { session.findWrapperFillerForTargetSlot(frame, slot) } ?: return ActionResult(
-            createLog("cannot find filler for frame : ${if (frame != null) frame::class.qualifiedName else null}, slot : ${slot}"),
-            true
-        )
-        return DirectlyFillAction(generator, wrapFiller, decorativeAnnotations).wrappedRun(session)
-    }
-}
 
 data class FillAction<T>(
     val generator: () -> T?,

@@ -34,6 +34,7 @@ data class EntityEvent(
     var origValue: String? = null
 
     var isLeaf: Boolean = true
+    var semantic: CompanionType = CompanionType.AND
 
     fun toLongForm() : String {
         return """EntityEvent(value=$value, attribute=$attribute, isLeaf=$isLeaf, type=$type)"""
@@ -43,16 +44,8 @@ data class EntityEvent(
         this.type = type
     }
 
-    fun toCompanion(companionType: CompanionType) : EntityEvent {
-        return when (companionType) {
-            CompanionType.NEGATE -> EntityEvent(value, "${attribute}_Not", type)
-            CompanionType.OR -> EntityEvent(value, "${attribute}_Or", type)
-            CompanionType.LESSTHAN -> EntityEvent(value, "${attribute}_LessThan", type)
-            CompanionType.LESSTHANEQUALTO -> EntityEvent(value, "${attribute}_LessThanEqualTO", type)
-            CompanionType.GREATERTHAN -> EntityEvent(value, "${attribute}_GreaterThan", type)
-            CompanionType.GREATERTHANQUALTO -> EntityEvent(value, "${attribute}_GreaterThanEqualTo", type)
-            else -> throw RuntimeException("Not support companion: $companionType")
-        }
+    fun toCompanion(companionType: CompanionType) {
+        semantic = companionType
     }
 
     // TODO(sean) what is this used for?
@@ -79,7 +72,7 @@ enum class EventSource {
 }
 
 /**
- * This is used for specify proposed template match, each is contains one trigger, and
+ * This is used for specify proposed template match, each is containing one trigger, and
  * multiple slot filling.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -91,10 +84,9 @@ data class FrameEvent(
     var attribute: String? = null
     var query: String? = null
 
-    fun toCompanion(companionType: CompanionType) : FrameEvent {
-        return FrameEvent(type, slots.map { it.toCompanion(companionType) }, frames, packageName)
+    fun toCompanion(companionType: CompanionType)  {
+        slots.map { it.toCompanion(companionType) }
     }
-
 
     val qualifiedName = "$packageName.$type"
 

@@ -620,7 +620,6 @@ data class BadIndex(override var session: UserSession? = null, var index: Int) :
 }
 
 
-// This
 enum class CompanionType {
     AND, NEGATE, OR, LESSTHAN, LESSTHANEQUALTO, GREATERTHAN, GREATERTHANQUALTO;
 
@@ -637,8 +636,29 @@ enum class CompanionType {
     }
 }
 
+
 // This turns a closure with receiver
 fun <T, P> bindReceiver1(lambda: T.(P) -> Boolean, t: T?): (P) -> Boolean = { p -> t == null || t.lambda(p) }
+
+
+data class Helper<T> (
+    val not: MutableList<T> = mutableListOf(),
+    val or: MutableList<T> = mutableListOf(),
+    val lessThan: MutableList<T> = mutableListOf(),
+    val greaterThan: MutableList<T> = mutableListOf(),
+    val lessThanEqualTo: MutableList<T> = mutableListOf(),
+    val greaterThanEqualTo: MutableList<T> = mutableListOf()) {
+
+    fun clear() {
+        not.clear()
+        or.clear()
+        lessThan.clear()
+        greaterThan.clear()
+        lessThanEqualTo.clear()
+        greaterThanEqualTo.clear()
+    }
+}
+
 
 data class Negate<T>(val filters: List<(T)->Boolean>) : (T) -> Boolean {
     constructor(vararg fs: T): this ( fs.map { f -> { it : T -> it != f} } )
@@ -720,6 +740,20 @@ object ValueFilterBuilder{
         return And(filters)
     }
 
+    fun <T, P: Comparable<P>> build(
+        test: T.(P) -> Boolean,
+        originalValue: T?,
+        helper: Helper<T>?= null): (P) -> Boolean {
+        val filters = mutableListOf<(P)->Boolean>()
+        filters.add(bindReceiver1(test, originalValue))
+        if (helper != null) {
+            if (helper.not.isNotEmpty()) filters.add(And(helper.not.map { itt -> bindReceiver1(test, itt) }))
+            if (helper.or.isNotEmpty()) filters.add(Or(helper.or.map { itt -> bindReceiver1(test, itt) }))
+        }
+        return And(filters)
+    }
+
+
     fun <P: Comparable<P>> build(companions: Map<CompanionType, List<P>?>): (P) -> Boolean {
         val filters = mutableListOf<(P) -> Boolean>()
         companions.map {
@@ -734,6 +768,19 @@ object ValueFilterBuilder{
                     else -> throw RuntimeException("Auxiliary slot only support ")
                 }
             }
+        }
+        return And(filters)
+    }
+
+    fun <P: Comparable<P>> build(helper: Helper<P>?): (P) -> Boolean {
+        val filters = mutableListOf<(P) -> Boolean>()
+        if (helper != null) {
+            if (helper.or.isNotEmpty()) filters.add(Or(helper.or))
+            if (helper.not.isNotEmpty()) filters.add(Negate(helper.not))
+            if (helper.lessThan.isNotEmpty()) filters.add(LessThan(helper.lessThan.minOrNull()))
+            if (helper.lessThanEqualTo.isNotEmpty()) filters.add(LessThan(helper.lessThanEqualTo.minOrNull()))
+            if (helper.greaterThan.isNotEmpty()) filters.add(GreaterThan(helper.greaterThan.maxOrNull()))
+            if (helper.greaterThanEqualTo.isNotEmpty()) filters.add(GreaterThanEqualTo(helper.greaterThan.maxOrNull()))
         }
         return And(filters)
     }

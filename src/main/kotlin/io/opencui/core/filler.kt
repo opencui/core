@@ -7,6 +7,7 @@ import io.opencui.core.da.DumbDialogAct
 import io.opencui.core.hasMore.No
 import io.opencui.serialization.Json
 import io.opencui.serialization.JsonObject
+import org.jetbrains.kotlin.parsing.hasIllegalUnderscore
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import java.io.Serializable
 import kotlin.collections.LinkedHashMap
@@ -274,25 +275,17 @@ interface TypedFiller<T> {
     }
 }
 
-data class PropertyFinder<T>(val r: Any, val name: String) {
-    fun invoke(companionType: CompanionType): KMutableProperty1<Any, T>? {
-        val realName = companionType.addSuffix(name)
-        val property = r::class.memberProperties.find { it.name == realName }
-        @Suppress("UNCHECKED_CAST")
-        return (property as? KMutableProperty1<Any, T>)
-    }
-}
-
 class EntityFiller<T>(
     val buildSink: () -> KMutableProperty0<T?>,
-    val origSetter: ((String?) -> Unit)? = null,
+    val origSetter: ((String?) -> Unit)?,
     val builder: (String, String?) -> T?
 ) : AEntityFiller(), TypedFiller<T> {
 
-
-    constructor(buildSink: () -> KMutableProperty0<T?>,
-                origSetter: ((String?) -> Unit)? = null,
-                builder: (String) -> T?): this(buildSink, origSetter, {s, _ -> builder(s)})
+    constructor(
+        buildSink: () -> KMutableProperty0<T?>,
+        origSetter: ((String?) -> Unit)? = null,
+        builder: (String) -> T?
+    ): this(buildSink, origSetter, {s, _ -> builder(s)})
 
     override val target: KMutableProperty0<T?>
         get() = buildSink()
@@ -342,6 +335,7 @@ class EntityFiller<T>(
         related.isUsed = true
 
         if (valueGood != null && !valueGood!!.invoke(related.value, related.type)) return false
+
         target.set(builder.invoke(related.value, related.type))
         value = related.value
         origValue = related.origValue
@@ -366,6 +360,87 @@ class EntityFiller<T>(
         }
     }
 }
+
+
+// This filler is used to fill the helper so that we do not have to mess up the state for the
+// original filler.
+class HelperFiller<T>(
+    val target: Helper<T>,
+    val origSetter: ((String?) -> Unit)?,
+    val builder: (String, String?) -> T?
+) :  AEntityFiller() {
+
+    var valueGood: ((String, String?) -> Boolean)? = null
+
+    init {
+        valueGood = {
+                s, t ->
+            try {
+                builder(s, t) != null
+            } catch (e: Exception) {
+                e.printStackTrace()
+                false
+            }
+        }
+    }
+
+    override val attribute: String
+        get() = if (super.attribute.endsWith("._item")) super.attribute.substringBeforeLast("._item") else super.attribute
+
+    override fun clear() {
+        event = null
+        origSetter?.invoke(null)
+        target.clear()
+        done = false
+        super.clear()
+    }
+
+    override fun qualifiedEventType(): String {
+        val frameType = path!!.last().host::class.qualifiedName!!.let {
+            if (it.endsWith("?")) it.dropLast(1) else it
+        }
+        return frameType.substringBefore("<")
+    }
+
+    override fun isCompatible(frameEvent: FrameEvent): Boolean {
+        return simpleEventType() == frameEvent.type && frameEvent.activeEntitySlots.any { it.attribute == attribute }
+    }
+
+    override fun commit(frameEvent: FrameEvent): Boolean {
+        val related = frameEvent.slots.find { it.attribute == attribute && !it.isUsed }!!
+        related.isUsed = true
+
+        if (valueGood != null && !valueGood!!.invoke(related.value, related.type)) return false
+
+        val typedValue = builder.invoke(related.value, related.type) ?: return true
+        
+        if (related.semantic == CompanionType.AND) {
+            // We mainly need to remove the value from
+            target.not.removeIf{ it == typedValue }
+            done = true
+        }
+
+        if (related.semantic == CompanionType.NEGATE) {
+            target.not.add(typedValue)
+            done = true
+        }
+        return true
+    }
+
+    companion object {
+        inline fun <reified T> build(
+            session: UserSession,
+            noinline buildSink: () -> KMutableProperty0<T?>
+        ): EntityFiller<T> {
+            val fullName = T::class.java.canonicalName
+            val builder: (String) -> T? = { s ->
+                Json.decodeFromString(s, session!!.findKClass(fullName)!!) as? T
+            }
+            return EntityFiller(buildSink, null, builder)
+        }
+    }
+}
+
 
 
 // Used with composite with VR (or almost always).
