@@ -363,6 +363,7 @@ class HelperFiller<T>(
 ) :  AEntityFiller(), TypedFiller<Helper<T>> {
 
     var valueGood: ((String, String?) -> Boolean)? = null
+    var entityEvent : EntityEvent? = null
 
     init {
         valueGood = {
@@ -377,10 +378,23 @@ class HelperFiller<T>(
     }
 
     override fun clear() {
-        event = null
-        helper.clear()
+        // For now, we support two level clear.
+        if (entityEvent != null) {
+            // small clear remove the entityEvent so that next clear will clear everything.
+            if (entityEvent!!.semantic == CompanionType.NEGATE) {
+                // if the last event is negation, clear should remove that from not.
+                val typedValue = builder.invoke(entityEvent!!.value, entityEvent!!.type)
+                helper.not.removeIf { it == typedValue }
+            }
+
+            entityEvent = null
+        } else {
+            helper.clear()
+            super.clear()
+        }
+        // for helper, we are always done.
         done = false
-        super.clear()
+
     }
 
     override fun qualifiedEventType(): String {
@@ -390,7 +404,7 @@ class HelperFiller<T>(
         return frameType.substringBefore("<")
     }
 
-   override val attribute: String
+    override val attribute: String
         get() = if (super.attribute.endsWith("._item")) super.attribute.substringBeforeLast("._item") else super.attribute
 
     override fun isCompatible(frameEvent: FrameEvent): Boolean {
@@ -407,6 +421,8 @@ class HelperFiller<T>(
 
         val typedValue = builder.invoke(related.value, related.type) ?: return true
 
+        entityEvent = related
+
         if (related.semantic == CompanionType.AND) {
             // We mainly need to remove the value from
             helper.not.removeIf{ it == typedValue }
@@ -417,6 +433,8 @@ class HelperFiller<T>(
             helper.not.add(typedValue)
             done = true
         }
+
+        // TODO: add support for other semantics
         return true
     }
 
