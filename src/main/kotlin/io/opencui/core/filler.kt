@@ -300,6 +300,17 @@ class EntityFiller<T>(
         }
     }
 
+    // We will check if there are negate value.
+    override fun done(frameEvents: List<FrameEvent>): Boolean {
+        // If we find value with alternative value, we handle it.
+        for (frameEvent in frameEvents) {
+            val related = frameEvent.slots.find { it.attribute == attribute && !it.isUsed && it.semantic != CompanionType.AND }
+            if (related != null) return false
+        }
+        return done
+    }
+
+
     override val attribute: String
         get() = if (super.attribute.endsWith("._item")) super.attribute.substringBeforeLast("._item") else super.attribute
 
@@ -328,15 +339,28 @@ class EntityFiller<T>(
         val related = frameEvent.slots.find { it.attribute == attribute && !it.isUsed }!!
         related.isUsed = true
 
-        if (valueGood != null && !valueGood!!.invoke(related.value, related.type)) return false
-        target.set(builder.invoke(related.value, related.type))
-        value = related.value
-        origValue = related.origValue
-        event = frameEvent
-        decorativeAnnotations.clear()
-        decorativeAnnotations.addAll(related.decorativeAnnotations)
-        origSetter?.invoke(origValue)
-        done = true
+        if (related.semantic == CompanionType.AND) {
+            if (valueGood != null && !valueGood!!.invoke(related.value, related.type)) return false
+            target.set(builder.invoke(related.value, related.type))
+            value = related.value
+            origValue = related.origValue
+            event = frameEvent
+            decorativeAnnotations.clear()
+            decorativeAnnotations.addAll(related.decorativeAnnotations)
+            origSetter?.invoke(origValue)
+            done = true
+        }
+
+        if (related.semantic == CompanionType.NEGATE) {
+            val newValue = builder.invoke(related.value, related.type)
+            val oldValue = target.get()
+            if (oldValue == newValue) {
+                clear()
+            } else {
+                done = true
+            }
+        }
+
         return true
     }
 
