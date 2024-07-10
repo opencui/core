@@ -790,13 +790,17 @@ data class UserSession(
             val targetFiller = it.targetFiller
             it.canEnter(frameEvents)
             && (
-                (targetFiller is AEntityFiller && targetFiller.done(emptyList()) && frameEvents.firstOrNull { e -> it.isCompatible(e) } != null)
+                (targetFiller is AEntityFiller && targetFiller.done(emptyList())
+                        && frameEvents.firstOrNull { e -> it.isCompatible(e) } != null)
                 // special matcher for HasMore with PagedSelectable; allow to refocus to undone HasMore if there is one
-                || (targetFiller is InterfaceFiller<*> && (it.parent as? FrameFiller<*>)?.frame() is HasMore && (it.parent?.parent?.parent as? MultiValueFiller<*>)?.done(
-                    emptyList()
-                ) == false && frameEvents.firstOrNull { e -> it.isCompatible(e) } != null)
+                || (targetFiller is InterfaceFiller<*> &&
+                        (it.parent as? FrameFiller<*>)?.frame() is HasMore
+                        && (it.parent?.parent?.parent as? MultiValueFiller<*>)?.done(emptyList()) == false
+                        && frameEvents.firstOrNull { e -> it.isCompatible(e) } != null)
                 || (level == 0
-                    && (targetFiller is AEntityFiller || (targetFiller is InterfaceFiller<*> && targetFiller.realtype == null) || (targetFiller is MultiValueFiller<*> && targetFiller.findCurrentFiller() == null))
+                    && (targetFiller is AEntityFiller
+                        || (targetFiller is InterfaceFiller<*> && targetFiller.realtype == null)
+                        || (targetFiller is MultiValueFiller<*> && targetFiller.findCurrentFiller() == null))
                     && !targetFiller.done(frameEvents) && frameEvents.firstOrNull { e -> it.isCompatible(e) } != null)
             )
         }

@@ -90,7 +90,8 @@ data class FrameEvent(
     var query: String? = null
 
     fun toCompanion(companionType: CompanionType) : FrameEvent {
-        return FrameEvent(type, slots.map { it.toCompanion(companionType) }, frames, packageName)
+        // return FrameEvent(type, slots.map{ it.toOriginal(companionType) } + slots.map{ it.toCompanion(companionType) }, frames, packageName)
+        return FrameEvent(type, slots.map{ it.toCompanion(companionType) }, frames, packageName)
     }
 
     val qualifiedName = "$packageName.$type"
